@@ -1,120 +1,227 @@
-# Hub-Spoke AWS Architecture with ALB, NLB, and Transit Gateway
+# AWS Hub-Spoke Architecture with Load Balancers and Proxy
 
-This Terraform configuration implements a Hub-Spoke architecture in AWS ap-northeast-2 region with the following components:
+이 프로젝트는 AWS에서 Hub-Spoke 아키텍처를 구현하여 중앙 집중식 네트워크 관리와 보안 처리를 제공합니다.
 
-## Architecture Overview
+## 🏗️ 아키텍처 개요
 
 ```
 External Client
-    ↓
-Internet Gateway (Central VPC)
-    ↓
+        ↓
+Internet Gateway (Hub VPC)
+        ↓
 Internet-facing ALB (Public Subnet)
-    ↓
+        ↓
 Internal NLB (Private Subnet)
-    ↓
-Proxy Servers (Nginx - replacing WAF)
-    ↓
+        ↓
+Nginx Proxy Instances (Security Processing)
+        ↓
 Transit Gateway
-    ↓
-Spoke VPC Services (3-tier Architecture)
+        ↓
+Spoke VPC Services (EC2 Web Servers)
 ```
 
-## Key Features
+## 📋 주요 구성 요소
 
-1. **Hub VPC** - Central connectivity with Internet Gateway
-2. **Spoke VPCs** - No IGW, internet access via Transit Gateway through Hub
-3. **3-tier Architecture** in each Spoke VPC:
-   - Web Tier (Apache HTTP Server)
-   - Application Tier (Java Application)
-   - Database Tier (MariaDB)
-4. **Load Balancing**:
-   - Internet-facing ALB in Hub public subnets
-   - Internal NLB in Hub private subnets
-   - Internal ALB in each Spoke VPC
-5. **Proxy Solution** - Nginx-based proxy replacing third-party WAF
-6. **Transit Gateway** - Enables connectivity between Hub and Spoke VPCs
-7. **AL2023 Instances** - All EC2 instances use Amazon Linux 2023
+### Hub VPC (중앙 허브)
+- **CIDR**: 10.0.0.0/16
+- **가용 영역**: ap-northeast-2a, ap-northeast-2c
+- **Public Subnets**: 인터넷 게이트웨이 연결
+- **Private Subnets**: NAT Gateway를 통한 아웃바운드 연결
+- **구성 요소**:
+  - Internet-facing Application Load Balancer
+  - Internal Network Load Balancer
+  - Nginx Proxy 인스턴스 (2개, 각 AZ에 1개씩)
 
-## Infrastructure Components
+### Spoke VPCs (마이크로서비스)
+- **Spoke 1**: 10.1.0.0/16
+- **Spoke 2**: 10.2.0.0/16
+- **Spoke 3**: 10.3.0.0/16
+- **특징**:
+  - Internet Gateway 없음 (Hub를 통해서만 인터넷 접근)
+  - 각 VPC마다 Internal ALB와 EC2 웹 서버 보유
+  - Transit Gateway를 통해 Hub VPC와 연결
 
-### Hub VPC (10.0.0.0/16)
-- Public subnets for Internet-facing ALB
-- Private subnets for Internal NLB and proxy instances
-- NAT Gateways for outbound internet access
-- Internet Gateway for inbound traffic
+### Transit Gateway
+- 모든 VPC 간 연결 관리
+- Hub-Spoke 라우팅 구현
+- Spoke VPC들은 Hub를 통해서만 인터넷 접근
 
-### Spoke VPCs (10.1.0.0/16, 10.2.0.0/16, 10.3.0.0/16)
-- Web subnet (Apache servers)
-- Application subnet (Java applications)
-- Database subnet (MariaDB)
-- Private subnet for Transit Gateway attachment
+## 🔧 기술 스택
 
-### Security Groups
-- Proper tier-to-tier communication restrictions
-- Least privilege access patterns
-- Hub-to-Spoke connectivity via Transit Gateway
+- **Infrastructure**: Terraform
+- **Cloud Provider**: AWS
+- **Operating System**: Amazon Linux 2023
+- **Web Server**: Apache HTTP Server (httpd)
+- **Proxy**: Nginx
+- **Load Balancers**: ALB (Application Load Balancer), NLB (Network Load Balancer)
 
-## Deployment Instructions
+## 📁 파일 구조
 
-1. **Prerequisites**:
-   - AWS CLI configured
-   - Terraform >= 1.0 installed
-   - EC2 Key Pair created in ap-northeast-2
+```
+├── main.tf                 # Provider 설정 및 공통 데이터
+├── variables.tf            # 변수 정의
+├── hub-vpc.tf             # Hub VPC 및 네트워킹 리소스
+├── transit-gateway.tf     # Transit Gateway 설정
+├── spoke-vpcs.tf          # Spoke VPC들 정의
+├── load-balancers.tf      # ALB/NLB 설정
+├── proxy-instances.tf     # Nginx Proxy 인스턴스
+├── spoke-instances.tf     # Spoke VPC 웹 서버들
+├── outputs.tf             # 출력 값들
+├── proxy-config.tftpl     # Nginx 설정 템플릿
+└── terraform.tfvars.example # 변수 예제 파일
+```
 
-2. **Configuration**:
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   # Edit terraform.tfvars with your key pair name and other settings
-   ```
+## 🚀 배포 방법
 
-3. **Deploy**:
-   ```bash
-   terraform init
-   terraform plan
-   terraform apply
-   ```
-
-4. **Access**:
-   - Use the ALB DNS name from outputs to access the application
-   - Traffic flows through the proxy to spoke VPC services
-
-## Configuration Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| aws_region | ap-northeast-2 | AWS region |
-| project_name | hub-spoke-architecture | Project naming prefix |
-| hub_vpc_cidr | 10.0.0.0/16 | Hub VPC CIDR |
-| spoke_vpc_cidrs | [10.1.0.0/16, 10.2.0.0/16, 10.3.0.0/16] | Spoke VPC CIDRs |
-| instance_type | t3.medium | EC2 instance type |
-| key_name | "" | EC2 Key Pair name (required) |
-
-## Outputs
-
-- ALB and NLB DNS names
-- VPC and Transit Gateway IDs
-- Instance IDs for all tiers
-- Auto Scaling Group name for proxy instances
-
-## Security Features
-
-- No direct internet access from Spoke VPCs
-- Traffic flows through centralized proxy
-- Proper security group isolation
-- 3-tier architecture separation
-- Encrypted communication between tiers
-
-## Monitoring and Scaling
-
-- Auto Scaling Group for proxy instances (2-6 instances)
-- Health checks for all load balancers
-- CloudWatch integration (via AWS provider)
-
-## Clean Up
-
+### 1. 사전 준비
 ```bash
+# AWS CLI 설정 확인
+aws configure list
+
+# Terraform 설치 확인
+terraform version
+```
+
+### 2. 변수 설정
+```bash
+# terraform.tfvars 파일 생성
+cp terraform.tfvars.example terraform.tfvars
+
+# 필요한 변수 수정
+vim terraform.tfvars
+```
+
+### 3. 배포 실행
+```bash
+# Terraform 초기화
+terraform init
+
+# 배포 계획 확인
+terraform plan
+
+# 배포 실행
+terraform apply
+```
+
+### 4. 리소스 정리
+```bash
+# 모든 리소스 삭제
 terraform destroy
 ```
 
-**Note**: Ensure you have the correct AWS credentials and permissions before deployment.
+## 🔧 주요 변수
+
+| 변수명 | 기본값 | 설명 |
+|--------|--------|------|
+| `aws_region` | ap-northeast-2 | AWS 리전 |
+| `project_name` | hub-spoke | 프로젝트 이름 |
+| `environment` | prod | 환경 이름 |
+| `hub_vpc_cidr` | 10.0.0.0/16 | Hub VPC CIDR |
+| `instance_type` | t3.medium | EC2 인스턴스 타입 |
+| `key_name` | "" | EC2 키 페어 이름 |
+
+## 📊 출력 값
+
+배포 완료 후 다음 정보들이 출력됩니다:
+
+- `alb_dns_name`: Internet-facing ALB DNS 이름
+- `nlb_dns_name`: Internal NLB DNS 이름
+- `spoke_lb_dns_names`: 각 Spoke VPC ALB DNS 이름들
+- `hub_vpc_id`: Hub VPC ID
+- `spoke_vpc_ids`: Spoke VPC ID들
+- `transit_gateway_id`: Transit Gateway ID
+- `proxy_instance_ids`: Proxy 인스턴스 ID들
+- `spoke_web_instance_ids`: Spoke 웹 서버 인스턴스 ID들
+
+## 🌐 네트워크 플로우
+
+### 인바운드 트래픽
+1. **External Client** → Internet Gateway
+2. **Internet Gateway** → Internet-facing ALB (Public Subnet)
+3. **ALB** → Internal NLB (Private Subnet)
+4. **NLB** → Nginx Proxy Instances (2개, 로드밸런싱)
+5. **Proxy** → Transit Gateway
+6. **TGW** → Spoke VPC Internal ALBs
+7. **Spoke ALBs** → EC2 Web Servers
+
+### 아웃바운드 트래픽 (Spoke VPCs)
+1. **Spoke EC2** → Transit Gateway
+2. **TGW** → Hub VPC Private Subnets
+3. **Hub Private** → NAT Gateway
+4. **NAT Gateway** → Internet Gateway
+
+## 🔒 보안 구성
+
+### Security Groups
+- **ALB Security Group**: HTTP(80) 인바운드 허용
+- **Proxy Security Group**: Hub VPC에서 HTTP(8080), SSH(22) 허용
+- **Spoke Security Groups**: Hub VPC에서 HTTP(80), SSH(22) 허용
+
+### 네트워크 격리
+- Spoke VPC들은 직접적인 인터넷 접근 불가
+- 모든 트래픽은 Hub VPC를 경유
+- Proxy 레이어에서 보안 정책 적용 가능
+
+## 🎯 주요 특징
+
+1. **Count 미사용**: 모든 리소스를 개별적으로 정의하여 명확한 리소스 관리
+2. **Amazon Linux 2023**: 최신 OS 사용
+3. **Multi-AZ 고가용성**: 2개 가용 영역 활용
+4. **Hub-Spoke 아키텍처**: 중앙 집중식 네트워크 관리
+5. **보안 프록시**: Nginx를 통한 트래픽 필터링 및 로드밸런싱
+6. **완전한 격리**: Spoke VPC들의 인터넷 직접 접근 차단
+
+## 🔍 모니터링 및 로그
+
+### Health Check
+- **ALB**: `/health` 경로 체크
+- **NLB**: HTTP 8080 포트 체크
+- **Spoke ALBs**: `/` 경로 체크
+
+### 로그 위치
+- **Nginx 로그**: `/var/log/nginx/`
+- **Apache 로그**: `/var/log/httpd/`
+
+## 🔧 트러블슈팅
+
+### 일반적인 문제들
+
+1. **ALB Health Check 실패**
+   - Proxy 인스턴스의 `/health` 엔드포인트 확인
+   - Security Group 규칙 점검
+
+2. **Spoke VPC 연결 문제**
+   - Transit Gateway 라우팅 테이블 확인
+   - Security Group 간 통신 규칙 점검
+
+3. **DNS 해상도 문제**
+   - VPC DNS 설정 확인 (enable_dns_hostnames, enable_dns_support)
+
+### 유용한 명령어
+
+```bash
+# Terraform 상태 확인
+terraform show
+
+# 특정 리소스 정보 확인
+terraform state show aws_lb.internet_facing
+
+# 리소스 의존성 그래프 생성
+terraform graph | dot -Tsvg > graph.svg
+```
+
+## 📝 라이센스
+
+이 프로젝트는 교육 및 데모 목적으로 제공됩니다.
+
+## 🤝 기여 방법
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+---
+
+**참고**: 이 구성은 프로덕션 환경에서 사용하기 전에 보안 검토 및 성능 테스트를 거쳐야 합니다.

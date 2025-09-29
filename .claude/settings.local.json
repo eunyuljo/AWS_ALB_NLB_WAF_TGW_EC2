@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(terraform state:*)",
+      "Bash(aws ec2 describe-route-tables:*)",
+      "Bash(terraform:*)",
+      "Bash(aws ec2 describe-network-interfaces:*)",
+      "Bash(wait)",
+      "Bash(aws elbv2 describe-load-balancers:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

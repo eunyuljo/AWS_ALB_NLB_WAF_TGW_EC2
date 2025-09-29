@@ -1,22 +1,22 @@
 # Spoke VPC Security Groups
-resource "aws_security_group" "spoke_1_main" {
-  name_prefix = "${var.project_name}-spoke-1-main-"
-  vpc_id      = aws_vpc.spoke_1.id
+resource "aws_security_group" "spoke_main" {
+  name_prefix = "${var.project_name}-spoke-main-"
+  vpc_id      = aws_vpc.spoke.id
 
   ingress {
-    description = "HTTP from Hub"
+    description = "HTTP from Central"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = [var.hub_vpc_cidr]
+    cidr_blocks = [var.central_vpc_cidr]
   }
 
   ingress {
-    description = "SSH from Hub"
+    description = "SSH from Central"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.hub_vpc_cidr]
+    cidr_blocks = [var.central_vpc_cidr]
   }
 
   egress {
@@ -27,317 +27,105 @@ resource "aws_security_group" "spoke_1_main" {
   }
 
   tags = {
-    Name = "${var.project_name}-spoke-1-main-sg"
+    Name = "${var.project_name}-spoke-main-sg"
   }
 }
 
-resource "aws_security_group" "spoke_2_main" {
-  name_prefix = "${var.project_name}-spoke-2-main-"
-  vpc_id      = aws_vpc.spoke_2.id
 
-  ingress {
-    description = "HTTP from Hub"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = [var.hub_vpc_cidr]
-  }
-
-  ingress {
-    description = "SSH from Hub"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.hub_vpc_cidr]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.project_name}-spoke-2-main-sg"
-  }
-}
-
-resource "aws_security_group" "spoke_3_main" {
-  name_prefix = "${var.project_name}-spoke-3-main-"
-  vpc_id      = aws_vpc.spoke_3.id
-
-  ingress {
-    description = "HTTP from Hub"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = [var.hub_vpc_cidr]
-  }
-
-  ingress {
-    description = "SSH from Hub"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.hub_vpc_cidr]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.project_name}-spoke-3-main-sg"
-  }
-}
 
 locals {
-  spoke_1_user_data = <<-EOF
+  spoke_user_data = <<-EOF
 #!/bin/bash
-yum update -y
-yum install -y httpd
-systemctl start httpd
-systemctl enable httpd
+# Create simple HTTP server using Python3 (pre-installed on AL2023)
+mkdir -p /var/www/html
+cat > /var/www/html/server.py << 'PYEOF'
+#!/usr/bin/env python3
+import http.server
+import socketserver
+import os
+import subprocess
 
-echo "<h1>Spoke VPC 1 Web Server</h1>" > /var/www/html/index.html
-echo "<p>Hostname: $(hostname)</p>" >> /var/www/html/index.html
-echo "<p>Instance ID: $(curl -s http://169.254.169.254/latest/meta-data/instance-id)</p>" >> /var/www/html/index.html
-echo "<p>VPC: 10.1.0.0/16</p>" >> /var/www/html/index.html
+class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
+        # Get instance metadata
+        try:
+            hostname = os.uname().nodename
+            instance_id = subprocess.check_output(['curl', '-s', 'http://169.254.169.254/latest/meta-data/instance-id'], timeout=5).decode().strip()
+        except:
+            hostname = "unknown"
+            instance_id = "unknown"
+
+        html = f"""
+        <html>
+        <head><title>Spoke VPC Web Server</title></head>
+        <body>
+            <h1>Spoke VPC Web Server</h1>
+            <p>Hostname: {hostname}</p>
+            <p>Instance ID: {instance_id}</p>
+            <p>VPC: ${var.spoke_vpc_cidr}</p>
+            <p>Server: Python HTTP Server</p>
+        </body>
+        </html>
+        """
+        self.wfile.write(html.encode())
+
+PORT = 80
+with socketserver.TCPServer(("", PORT), MyHTTPRequestHandler) as httpd:
+    print(f"Server running on port {PORT}")
+    httpd.serve_forever()
+PYEOF
+
+# Make executable and start
+chmod +x /var/www/html/server.py
+nohup python3 /var/www/html/server.py > /var/log/simple-http.log 2>&1 &
+
+# Create systemd service for auto-start
+cat > /etc/systemd/system/simple-http.service << 'SVCEOF'
+[Unit]
+Description=Simple HTTP Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/html
+ExecStart=/usr/bin/python3 /var/www/html/server.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+systemctl enable simple-http.service
+systemctl start simple-http.service
 EOF
 
-  spoke_2_user_data = <<-EOF
-#!/bin/bash
-yum update -y
-yum install -y httpd
-systemctl start httpd
-systemctl enable httpd
 
-echo "<h1>Spoke VPC 2 Web Server</h1>" > /var/www/html/index.html
-echo "<p>Hostname: $(hostname)</p>" >> /var/www/html/index.html
-echo "<p>Instance ID: $(curl -s http://169.254.169.254/latest/meta-data/instance-id)</p>" >> /var/www/html/index.html
-echo "<p>VPC: 10.2.0.0/16</p>" >> /var/www/html/index.html
-EOF
-
-  spoke_3_user_data = <<-EOF
-#!/bin/bash
-yum update -y
-yum install -y httpd
-systemctl start httpd
-systemctl enable httpd
-
-echo "<h1>Spoke VPC 3 Web Server</h1>" > /var/www/html/index.html
-echo "<p>Hostname: $(hostname)</p>" >> /var/www/html/index.html
-echo "<p>Instance ID: $(curl -s http://169.254.169.254/latest/meta-data/instance-id)</p>" >> /var/www/html/index.html
-echo "<p>VPC: 10.3.0.0/16</p>" >> /var/www/html/index.html
-EOF
 }
 
 # Spoke VPC Instances
-resource "aws_instance" "spoke_1_web" {
-  ami             = data.aws_ami.al2023.id
-  instance_type   = var.instance_type
-  key_name        = var.key_name
-  subnet_id       = aws_subnet.spoke_1_main.id
-  security_groups = [aws_security_group.spoke_1_main.id]
+resource "aws_instance" "spoke_web" {
+  ami                  = data.aws_ami.al2023.id
+  instance_type        = var.instance_type
+  key_name             = var.key_name
+  subnet_id            = aws_subnet.spoke_private.id
+  security_groups      = [aws_security_group.spoke_main.id]
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
 
-  user_data = base64encode(local.spoke_1_user_data)
+  user_data = base64encode(local.spoke_user_data)
 
   tags = {
-    Name = "${var.project_name}-spoke-1-web"
+    Name = "${var.project_name}-spoke-web"
     Type = "Web"
   }
 }
 
-resource "aws_instance" "spoke_2_web" {
-  ami             = data.aws_ami.al2023.id
-  instance_type   = var.instance_type
-  key_name        = var.key_name
-  subnet_id       = aws_subnet.spoke_2_main.id
-  security_groups = [aws_security_group.spoke_2_main.id]
 
-  user_data = base64encode(local.spoke_2_user_data)
 
-  tags = {
-    Name = "${var.project_name}-spoke-2-web"
-    Type = "Web"
-  }
-}
 
-resource "aws_instance" "spoke_3_web" {
-  ami             = data.aws_ami.al2023.id
-  instance_type   = var.instance_type
-  key_name        = var.key_name
-  subnet_id       = aws_subnet.spoke_3_main.id
-  security_groups = [aws_security_group.spoke_3_main.id]
 
-  user_data = base64encode(local.spoke_3_user_data)
 
-  tags = {
-    Name = "${var.project_name}-spoke-3-web"
-    Type = "Web"
-  }
-}
-
-# Spoke VPC Load Balancers
-resource "aws_lb" "spoke_1_internal" {
-  name               = "${var.project_name}-spoke-1-ilb"
-  internal           = true
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.spoke_1_main.id]
-  subnets            = [aws_subnet.spoke_1_main.id, aws_subnet.spoke_1_private.id]
-
-  tags = {
-    Name = "${var.project_name}-spoke-1-ilb"
-  }
-}
-
-resource "aws_lb" "spoke_2_internal" {
-  name               = "${var.project_name}-spoke-2-ilb"
-  internal           = true
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.spoke_2_main.id]
-  subnets            = [aws_subnet.spoke_2_main.id, aws_subnet.spoke_2_private.id]
-
-  tags = {
-    Name = "${var.project_name}-spoke-2-ilb"
-  }
-}
-
-resource "aws_lb" "spoke_3_internal" {
-  name               = "${var.project_name}-spoke-3-ilb"
-  internal           = true
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.spoke_3_main.id]
-  subnets            = [aws_subnet.spoke_3_main.id, aws_subnet.spoke_3_private.id]
-
-  tags = {
-    Name = "${var.project_name}-spoke-3-ilb"
-  }
-}
-
-# Target Groups
-resource "aws_lb_target_group" "spoke_1_web" {
-  name     = "${var.project_name}-spoke-1-web-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.spoke_1.id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = {
-    Name = "${var.project_name}-spoke-1-web-tg"
-  }
-}
-
-resource "aws_lb_target_group" "spoke_2_web" {
-  name     = "${var.project_name}-spoke-2-web-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.spoke_2.id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = {
-    Name = "${var.project_name}-spoke-2-web-tg"
-  }
-}
-
-resource "aws_lb_target_group" "spoke_3_web" {
-  name     = "${var.project_name}-spoke-3-web-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.spoke_3.id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = {
-    Name = "${var.project_name}-spoke-3-web-tg"
-  }
-}
-
-# Load Balancer Listeners
-resource "aws_lb_listener" "spoke_1_web" {
-  load_balancer_arn = aws_lb.spoke_1_internal.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.spoke_1_web.arn
-  }
-}
-
-resource "aws_lb_listener" "spoke_2_web" {
-  load_balancer_arn = aws_lb.spoke_2_internal.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.spoke_2_web.arn
-  }
-}
-
-resource "aws_lb_listener" "spoke_3_web" {
-  load_balancer_arn = aws_lb.spoke_3_internal.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.spoke_3_web.arn
-  }
-}
-
-# Target Group Attachments
-resource "aws_lb_target_group_attachment" "spoke_1_web" {
-  target_group_arn = aws_lb_target_group.spoke_1_web.arn
-  target_id        = aws_instance.spoke_1_web.id
-  port             = 80
-}
-
-resource "aws_lb_target_group_attachment" "spoke_2_web" {
-  target_group_arn = aws_lb_target_group.spoke_2_web.arn
-  target_id        = aws_instance.spoke_2_web.id
-  port             = 80
-}
-
-resource "aws_lb_target_group_attachment" "spoke_3_web" {
-  target_group_arn = aws_lb_target_group.spoke_3_web.arn
-  target_id        = aws_instance.spoke_3_web.id
-  port             = 80
-}

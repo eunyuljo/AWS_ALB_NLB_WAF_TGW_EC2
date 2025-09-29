@@ -6,7 +6,14 @@
       "Bash(terraform:*)",
       "Bash(aws ec2 describe-network-interfaces:*)",
       "Bash(wait)",
-      "Bash(aws elbv2 describe-load-balancers:*)"
+      "Bash(aws elbv2 describe-load-balancers:*)",
+      "mcp__ide__getDiagnostics",
+      "mcp__aws-knowledge__aws___search_documentation",
+      "mcp__aws-knowledge__aws___read_documentation",
+      "Bash(aws ec2 describe-security-groups --group-ids sg-0adc93a942ac61997 --region ap-northeast-2 --query 'SecurityGroups[0].{GroupId:GroupId,GroupName:GroupName,VpcId:VpcId,IpPermissions:IpPermissions,IpPermissionsEgress:IpPermissionsEgress}' --output table)",
+      "Bash(aws ec2 describe-security-groups --group-ids sg-0e09c928fc57307ec --region ap-northeast-2 --query 'SecurityGroups[0].{GroupId:GroupId,GroupName:GroupName,VpcId:VpcId,IpPermissions:IpPermissions,IpPermissionsEgress:IpPermissionsEgress}' --output table)",
+      "Bash(curl -v --connect-timeout 10 central-spoke-internet-alb-1704316430.ap-northeast-2.elb.amazonaws.com)",
+      "Bash(curl -m 10 central-spoke-internet-alb-1704316430.ap-northeast-2.elb.amazonaws.com)"
     ],
     "deny": [],
     "ask": []

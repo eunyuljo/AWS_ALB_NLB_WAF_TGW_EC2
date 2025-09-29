@@ -1,9 +1,9 @@
 0. count는 쓰지 말 것
 1. ec2의 경우 al2023 으로 구축
 2. ap-northeast-2 를 기준으로 구축 ( ap-northeast-2a, ap-northeast-2c )
-3. 중앙 VPC를 허브로 하는 Hub-Spoke 아키텍처 구현
+3. 중앙 VPC를 허브로 하는 Hub-Spoke 아키텍처 구현 ( hub 1 개, spoke 1 개만 필요한 최소만 구성 )
 4. VPC 간에는 TGW로 연결되어있음
-4. Third-party WAF가 Internal NLB로 이미 구성된 환경에서 시작 - WAF는 Proxy 로 대체
+4. Third-party WAF가 Internal NLB로 이미 구성되어있어 구성을 다른 방식으로 변경할 수 없음 - WAF는 Proxy 로 대체
 5. Spoke VPC들은 IGW 없이 중앙 VPC를 통해서만 인터넷 접근
 6. 내부 VPC 서비스와의 연계 - endpoint는 간단하게 http 로만 진행
 7. Proxy 대상 NLB는 (Internal) 이고, 이를 연결해주기 위해 외부에서 받아주는 Internet-facing LB가 필요한 상황

@@ -5,9 +5,7 @@ yum install -y nginx
 # Configure nginx as a reverse proxy
 cat > /etc/nginx/conf.d/proxy.conf << 'EOL'
 upstream backend {
-    server ${spoke_1_lb_dns}:80;
-    server ${spoke_2_lb_dns}:80;
-    server ${spoke_3_lb_dns}:80;
+    server ${spoke_instance_ip}:80;
 }
 
 server {
